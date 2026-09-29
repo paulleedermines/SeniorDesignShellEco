@@ -59,6 +59,8 @@ disp(D(D.is_best_feasible,:))
 
 The studies retain invalid and incomplete runs with reasons. `target_met` requires completion, the time and average-speed requirements, minimum mass, battery capacity, physical constraints, and the energy goal. The best strategy is only the best **feasible candidate in the tested grid**. Compare energy only for the same completed mission; a stalled car is not efficient.
 
+`lapsim.exampleTargetParameters()` provides a reproducible combined design candidate: 85 kg total, Cd 0.10, area 0.60 m², Crr 0.003, and 3 W auxiliaries. `runLapSim` includes this candidate in the study exports. These are illustrative design inputs, not measured performance or guaranteed component capabilities; inspect [the example results](docs/example-results.md) before adopting them as targets.
+
 ## Track and model scope
 
 `track` is a table of positive segment `length_m`, signed `grade` (rise/run), `radius_m` (`Inf` for straight), and `speed_limit_mps` (`Inf` for unrestricted). The lengths define the lap distance everywhere. The sample layout places the old slow turn near 3,256 m and adjusts the final straight to 3,832.5 m per lap. It is a **layout assumption**, not a surveyed course. Supply measured curvature and elevation for real targets; the archived 2023 GPS file is not silently used for this mission.

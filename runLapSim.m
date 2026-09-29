@@ -28,15 +28,20 @@ close(fig);
 if runStudies
     fprintf('Running independent sensitivity and strategy cases...\n');
     results.sensitivity=lapsim.sensitivity(p,track);
+    writetable(results.sensitivity,fullfile(outputDirectory,'sensitivity.csv'));
     results.strategies=lapsim.strategySweep(p,track,[16.6 17 17.5 18 19]*0.44704,[0 1 2]*0.44704);
+    writetable(results.strategies,fullfile(outputDirectory,'strategies.csv'));
     results.rollingTargets=lapsim.targetSweep(p,track,'tires.crr',[.001 .002 .003 .004 .0056]);
+    writetable(results.rollingTargets,fullfile(outputDirectory,'rolling_targets.csv'));
     % Total-mass study holds driver mass at 50 kg; label this separate assumption.
     massStudy=p; massStudy.vehicle.driver_mass_kg=50;
     results.massTargets=lapsim.targetSweep(massStudy,track,'vehicle.chassis_mass_kg',[10 20 35 50 70 100]);
-    writetable(results.sensitivity,fullfile(outputDirectory,'sensitivity.csv'));
-    writetable(results.strategies,fullfile(outputDirectory,'strategies.csv'));
-    writetable(results.rollingTargets,fullfile(outputDirectory,'rolling_targets.csv'));
     writetable(results.massTargets,fullfile(outputDirectory,'mass_targets_driver50kg.csv'));
+    results.targetExample=lapsim.simulate(lapsim.exampleTargetParameters(),track);
+    writetable(struct2table(results.targetExample.summary),fullfile(outputDirectory,'target_example.csv'));
+    fig=lapsim.plotResult(results.targetExample,'off');
+    exportgraphics(fig,fullfile(outputDirectory,'target_example.png'),'Resolution',160);
+    close(fig);
     disp(results.strategies(results.strategies.is_best_feasible, ...
         {'strategy_mode','speed_mps','band_mps','terminal_energy_Wh','mi_per_kWh','target_met'}));
 end

@@ -27,8 +27,11 @@ data=zeros(ceil(p.sim.max_time_s/p.sim.dt_s)+numel(ends)+10,numel(names));
 mass=p.vehicle.chassis_mass_kg+p.vehicle.driver_mass_kg;
 meq=mass+p.vehicle.wheel_inertia_kgm2/p.vehicle.wheel_radius_m^2;
 initialKE=0.5*meq*v^2;
-while t<p.sim.max_time_s-1e-9 && x<totalDistance-1e-8
-    while segment<numel(ends) && x>=ends(segment)-1e-8, segment=segment+1; end
+% Use the same distance tolerance for transitions, completion and event checks.
+% Otherwise an accepted sub-micrometre remainder can create a near-zero step.
+distanceTolerance=min(1e-6,min(lengths)*1e-8);
+while t<p.sim.max_time_s-1e-9 && x<totalDistance-distanceTolerance
+    while segment<numel(ends) && x>=ends(segment)-distanceTolerance, segment=segment+1; end
     dt=min(p.sim.dt_s,p.sim.max_time_s-t);
     if v<=p.strategy.pulse_min_speed_mps, pulse=true;
     elseif v>=p.strategy.pulse_max_speed_mps-1e-6, pulse=false; end
@@ -53,7 +56,10 @@ while t<p.sim.max_time_s-1e-9 && x<totalDistance-1e-8
     if ~step.pt.electrical_feasible
         electricalOK=false; reason='auxiliary_power_infeasible'; break;
     end
-    if dt<1e-8, reason='battery_capacity'; break; end
+    if dt<1e-8
+        if capacityJ<=1e-5, reason='battery_capacity'; break; end
+        error('lapsim:Integration','Event step too small; refine track segments or reduce dt_s.');
+    end
     % Re-evaluate the final shortened interval so force and energy agree.
     [step,vNext]=solveStep(p,v,x,dt,pulse,segment,starts,caps,grades,radii,planBrake);
     if vNext < -1e-7, error('lapsim:Integration','Stop event failed to converge; reduce dt_s.'); end
@@ -85,7 +91,7 @@ while t<p.sim.max_time_s-1e-9 && x<totalDistance-1e-8
     if energy(1)>=p.battery.usable_capacity_Wh*3600-1e-5, reason='battery_capacity'; break; end
     if v<1e-8 && dx<1e-8, reason='stalled'; break; end
 end
-completed=x>=totalDistance-1e-6;
+completed=x>=totalDistance-distanceTolerance;
 if completed, reason='completed'; end
 result.parameters=p; result.track=track;
 result.trace=array2table(data(1:count,:),'VariableNames',names);
@@ -143,7 +149,7 @@ for iter=1:35
     vm=max(0,(v+vNext)/2);
     loads=lapsim.roadLoads(p,vm,grades(segment),radii(segment));
     endGuess=x+max(v,vm)*dt;
-    ahead=find(starts>x & starts<=endGuess+max(300,p.strategy.coast_lookahead_m));
+    ahead=find(starts>x);
     target=caps(segment);
     if ~isempty(ahead)
         target=min(target,min(sqrt(caps(ahead).^2+2*planBrake*max(0,starts(ahead)-endGuess))));

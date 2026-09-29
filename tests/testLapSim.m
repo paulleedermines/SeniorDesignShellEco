@@ -300,6 +300,59 @@ selected=strategies.terminal_energy_Wh(strategies.is_best_feasible);
 verifyEqual(testCase,selected,min(strategies.terminal_energy_Wh(strategies.feasible)),'AbsTol',1e-12);
 end
 
+function testMotorSpeedCeilingIsConsistentAtTransition(testCase)
+[p,track]=cruiseCase(100,9);
+p.motor.max_rpm=3000;
+limit=p.motor.max_rpm*2*pi/60*p.vehicle.wheel_radius_m/p.drivetrain.gear_ratio;
+p.sim.initial_speed_mps=limit-0.01;
+r=lapsim.simulate(p,track);
+verifyTrue(testCase,r.summary.completed);
+verifyLessThanOrEqual(testCase,max(r.trace.speed_mps),limit+1e-8);
+expectedRPM=r.trace.interval_speed_mps*p.drivetrain.gear_ratio/p.vehicle.wheel_radius_m*60/(2*pi);
+verifyEqual(testCase,r.trace.motor_rpm,expectedRPM,'AbsTol',1e-6);
+verifyLessThan(testCase,abs(r.energy.balance_residual_Wh),1e-8);
+end
+
+function testDynamicRollMomentConstrainsRearDrive(testCase)
+p=lapsim.defaultParameters(); p.vehicle.cg_height_m=0.6;
+radius=20;
+halfWidth=p.vehicle.front_track_m/2*(1-p.vehicle.cg_from_front_m/p.vehicle.wheelbase_m);
+speed=sqrt(0.98*p.environment.gravity_mps2*halfWidth/p.vehicle.cg_height_m*radius);
+loads=lapsim.roadLoads(p,speed,0,radius);
+rear=loads.rear_base_N+loads.transfer_per_force*loads.max_drive_N;
+availableMoment=(loads.normal_N-rear)*p.vehicle.front_track_m/2;
+verifyLessThanOrEqual(testCase,loads.roll_moment_Nm,availableMoment+1e-8);
+straight=lapsim.roadLoads(p,speed,0,Inf);
+verifyLessThan(testCase,loads.max_drive_N,straight.max_drive_N);
+end
+
+function testFullRaceConvergesWithSmallerTimeStep(testCase)
+p=lapsim.defaultParameters(); track=lapsim.exampleTrack();
+coarse=lapsim.simulate(p,track);
+p.sim.dt_s=p.sim.dt_s/2;
+fine=lapsim.simulate(p,track);
+verifyTrue(testCase,coarse.summary.feasible);
+verifyTrue(testCase,fine.summary.feasible);
+verifyEqual(testCase,coarse.summary.distance_m,15330,'AbsTol',1e-6);
+verifyEqual(testCase,coarse.summary.terminal_energy_Wh,fine.summary.terminal_energy_Wh,'RelTol',0.01);
+verifyEqual(testCase,coarse.summary.time_s,fine.summary.time_s,'RelTol',0.005);
+verifyLessThan(testCase,abs(fine.energy.balance_residual_Wh),1e-7);
+end
+
+function testTinySegmentRemainderIsNotBatteryDepletion(testCase)
+p=lapsim.defaultParameters(); track=lapsim.exampleTrack();
+% These pulse/coast phases previously left ~1e-8 m at a segment boundary.
+p.tires.crr=0.001;
+r=lapsim.simulate(p,track);
+verifyTrue(testCase,r.summary.completed);
+verifyEqual(testCase,r.summary.stop_reason,'completed');
+verifyLessThan(testCase,r.summary.battery_energy_Wh,50);
+p=lapsim.defaultParameters(); p.vehicle.chassis_mass_kg=70; p.vehicle.driver_mass_kg=50;
+r=lapsim.simulate(p,track);
+verifyTrue(testCase,r.summary.completed);
+verifyLessThan(testCase,r.summary.battery_energy_Wh,p.battery.usable_capacity_Wh);
+end
+
 function [p,track]=cruiseCase(distance,speed)
 p=lapsim.defaultParameters();
 p.strategy.mode='cruise'; p.strategy.cruise_speed_mps=speed;

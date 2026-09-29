@@ -33,20 +33,20 @@ for speedIndex = 1:numel(speeds_mps)
         index = index + 1;
         candidate = p;
         candidate.strategy.cruise_speed_mps = speed;
-        candidate.strategy.pulse_min_speed_mps = speed - band / 2;
-        candidate.strategy.pulse_max_speed_mps = speed + band / 2;
         if band == 0
             candidate.strategy.mode = 'cruise';
         else
             candidate.strategy.mode = 'pulse_coast';
+            candidate.strategy.pulse_min_speed_mps = speed - band / 2;
+            candidate.strategy.pulse_max_speed_mps = speed + band / 2;
         end
         row = studyCase(candidate, track);
         row = studyBaselineDelta(row, baseline);
         row.strategy_mode = string(candidate.strategy.mode);
         row.speed_mps = speed;
         row.band_mps = band;
-        row.pulse_min_speed_mps = candidate.strategy.pulse_min_speed_mps;
-        row.pulse_max_speed_mps = candidate.strategy.pulse_max_speed_mps;
+        row.pulse_min_speed_mps = speed - band / 2;
+        row.pulse_max_speed_mps = speed + band / 2;
         row.is_best_feasible = false;
         rows{index} = row;
     end

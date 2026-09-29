@@ -29,5 +29,10 @@ yticklabels({'Rolling','Aero','Motor','Transmission','Controller','Auxiliary', .
 xlabel('Energy (Wh), signed for aero/grade/kinetic'); grid on;
 title('Delivered energy allocation');
 sgtitle(sprintf('Shell Eco-marathon | %.2f kg | feasible: %d | target met: %d', ...
-    s.total_mass_kg,s.feasible,s.target_met));
+    s.total_mass_kg,s.feasible,s.target_met),'Color',[.15 .15 .15]);
+% Explicit print colors keep exports readable when MATLAB uses a dark theme.
+set(findall(fig,'Type','axes'),'Color','w','XColor',[.15 .15 .15], ...
+    'YColor',[.15 .15 .15],'GridColor',[.65 .65 .65]);
+set(findall(fig,'Type','text'),'Color',[.15 .15 .15]);
+set(findall(fig,'Type','constantline'),'Color',[.4 .4 .4]);
 end
