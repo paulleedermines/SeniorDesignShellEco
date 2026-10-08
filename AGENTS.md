@@ -20,6 +20,9 @@ AGENTS.md / CLAUDE.md        these notes
 Old Stuff/Vehicle Model/     legacy MATLAB scripts + track GPS data (reference only)
 lapsim/                      the new simulator: lapsim.m (model) + parameters.m (all inputs;
                              NaN = blank still to be filled, lapsim refuses to run until then)
+  sensitivity.m, strategySweep.m, targetSweep.m   studies (private/ holds their helpers)
+  plotResult.m, runBaseline.m                     plots, CSV export, one-call baseline
+  tests/testLapsim.m                              matlab.unittest suite (42 tests)
 ```
 
 - **Treat `Old Stuff/` as read-only reference.** Don't fix bugs there. Port ideas into `lapsim/` instead. The one exception is if the team explicitly asks for a legacy fix, e.g. to reproduce an old result.
@@ -133,6 +136,8 @@ One line each; details and line links are in README §7.
 
 ## Proposed lapsim architecture
 
+**Status:** the model is built as one file, `lapsim/lapsim.m`, with local functions for the track, road load, motor limits, pack and simulation, instead of the split below. The split is still a good target if the file keeps growing. The tests, studies and plots listed here exist; see "Running the tests".
+
 All MATLAB functions, no scripts in the core:
 
 ```
@@ -157,10 +162,21 @@ Minimum tests:
 - Convergence: dt = 0.1 s vs 0.01 s agree within 0.5 %.
 - Regression: with legacy parameters and a flat 3825 m lap, the result reproduces about 236.4 mi/kWh / 33.07 min. Keep the legacy switches (kt derate, I0/2, freewheel) for this test only.
 
+### Running the tests
+
+```powershell
+& "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -batch "cd('D:/EcoMarathon/SeniorDesignShellEco/lapsim'); set(groot,'DefaultFigureVisible','off'); r = runtests('tests'); assertSuccess(r)"
+```
+
+- 42 tests, about 2 minutes. They start from a fixed reference parameter set written into `testLapsim.m`, so editing `parameters.m` cannot move the pinned baseline (1969.2 s, 40.37 Wh, 236.0 mi/kWh).
+- Covered: energy balance, distance, DNF, limits, convergence from the list above, plus wind, pack, cruise, friction circle, rollover, brakes and the studies.
+- **Not covered:** the legacy regression test above. `lapsim` has no switch for the legacy kt derate or I0 halving, and takes its lap from the GPS track.
+- A passing suite is not proof of correct physics: a test that has never failed is weak. The pack-limit test was checked by removing the spin-up term and watching it fail.
+
 ## Conventions for new code
 
 - Functions, not scripts. No `clear`, `clc` or `close all` in library code. No changes to global graphics defaults (`set(0,...)`).
-- One parameter source (`defaultParams.m`). Never hard-code lap length, lap count, time limit, air density or motor constants anywhere else.
+- One parameter source (`parameters.m`). Never hard-code lap length, lap count, time limit, air density or motor constants anywhere else.
 - Add a units comment on every physical quantity: `% [m/s]`, `% [N*m]`. Use `pi`, not `3.14`. Name conversions (`MPH_TO_MS = 0.44704`) instead of writing `/2.237`.
 - Every parameter gets a source (datasheet, measurement, rule article) or an explicit `ASSUMED` note.
 - Keep plotting separate from simulation. Trim arrays to the simulated length before plotting.

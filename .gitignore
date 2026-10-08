@@ -1,0 +1,5 @@
+# MATLAB autosave backups
+*.asv
+
+# Output of lapsim/runBaseline.m
+lapsim/results/

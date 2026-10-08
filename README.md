@@ -250,6 +250,33 @@ No two models share one parameter set. Values, with the file line where each is 
 - The GPS track data is present but no script reads it.
 - There are duplicate and near-duplicate files: two `vehiclemodel`s, two EC90 scripts, and three generations of track model.
 
+### 7.8 How `lapsim/` treats the issues above
+
+`lapsim/lapsim.m` is the replacement for `Shell_Track_Profile_Final.m`. Status of each §7.1 item, with the effect that §7.1 measured on the legacy model:
+
+| §7.1 | Legacy problem | In `lapsim` | Status |
+|---|---|---|---|
+| 1 | kt derated 0.9, ke not | kt = ke in SI units; any commutation penalty is the separate `eta_comm` (currently 1) | Fixed. Open: is the 0.9 real? |
+| 2 | Coasting silently decoupled | `freewheel` flag; without it, back-drive drag; with it, optional `coast_drag` and the rotor spin-up energy at each re-engagement | Made explicit. **Open hardware question: is there a freewheel?** |
+| 3 | ρ = 1.004 | 1.15 (`parameters.m`) | Fixed. Confirm on race day. |
+| 4 | I0 halved at 60 V | T_f and B calibrated from the 30 V / 2080 rpm datasheet point | Fixed. Confirm I0 (0.490 vs 0.493). |
+| 5 | Accessory power never used | `P_aux` charged every step, coasting included | Code fixed; **value is 0 until measured** |
+| 6 | No grade | Grade from the smoothed GPS altitude | Fixed |
+| 7 | Unbounded loop | Bounded by the time limit and the battery; reports DNF and `stop_reason` | Fixed |
+| 8 | One throttle level | Partial torque to land on the band top or hold a corner; `cruise` strategy added | Fixed |
+| 9 | Limits computed then overwritten | Current, torque, shaft power, duty cycle (with pack sag), pack current/power/voltage, traction and motor speed are hard caps; every cap hit is counted | Fixed |
+| 10, 11 | Dead coast windows, wrong corner radii | Curvature from the GPS track, backward-pass speed envelope | Fixed. Corner limit is rollover, grip or `a_y_comfort` |
+| 12, 13, 14 | Lap length defined several ways, hard-coded distance, wrap bug | One source (`p.rules`); race ends by simulated distance; periodic track | Fixed. GPS lap is 3849 m vs official 3832.5 m (`scale_to_official`) |
+| 15 | Wrong radius, rotor inertia omitted | Rolling radius; rotor inertia `J_rotor·GR²/r²` while coupled | Fixed. `J_rotor` = 4000 g·cm² to be confirmed against the datasheet |
+| 16, 17 | "0.9 N·m" applied at the wheel; dead gear branch | Motor torque is commanded and wheel force derived from it, so gear ratio changes force | Fixed |
+| 18, 19 | Portability, traceability | Functions only; every parameter has a source or `ASSUMED` | Fixed. Mass and driver inclusion (§7.2) still open |
+
+Added from the Chat branch (`origin/Chat`, 2026-09-29), re-implemented for this model: wind as a compass vector (so the along-track component changes around the lap), a pack model (internal resistance, current/power/voltage limits, usable capacity; the joulemeter reads the terminals, so pack I²R is reported but not scored), friction-circle traction and geometric rollover, a brake force limit, a cruise strategy, and `sensitivity`, `strategySweep`, `targetSweep`, `plotResult` and `runBaseline`. Not ported: its dynamic roll-moment limit on drive force, its midpoint integrator, and its three-segment example track.
+
+**Cross-check against the Chat branch.** With its inputs matched to ours (83.6 kg, ρ = 1.15, no auxiliaries, no pack resistance, our motor loss calibration, dt = 0.1 s) the Chat model gives 32.97 min / 39.69 Wh / 240.0 mi/kWh; `lapsim` gives 32.82 min / 40.37 Wh / 236.0 mi/kWh. Two independent implementations agree to 0.5 % in time and 1.7 % in energy. Chat's shipped defaults (70 kg driver on an 83.6 kg chassis, 5 W, 0.15 Ω) give 152.9 mi/kWh.
+
+**Still not explained: the real result.** At competition the team scored 171 mi/kWh against `lapsim`'s 236.0 (a 38 % energy gap, 15.3 Wh over 15.33 km). Candidates, in the order to check them: whether the 83.6 kg scale sum included the driver (mass alone would reach 171 at 83.6 kg for the car plus a 50 kg driver); `C_rr` (0.0090 alone would reach it); a freewheel that is absent or drags plus accessory draw (no freewheel plus 10 W gives 168.7 mi/kWh); wind; and driving that does not hold the planned band.
+
 ## 8. What changed from the previous review
 
 The previous version of this README (commit `f814f6a`) was a useful first pass. Checked against the code:
@@ -287,7 +314,7 @@ The previous version of this README (commit `f814f6a`) was a useful first pass. 
    - Is there a freewheel or clutch in the drive?
    - Is kt really derated 0.9 under sinusoidal drive, and if so, is it counted separately from the 0.95 controller efficiency?
 2. **Measure the car.** Do a coast-down test for C_rr and CdA, and weigh the car, driver and ballast. These dominate the result and none is sourced today.
-3. **Build the new lapsim as MATLAB functions**, with one parameter struct (units and source per value), a track loaded from the GPS file (grade and curvature), explicit limits, a race ended by distance, and `matlab.unittest` tests (energy balance, distance, time limit, limits respected). See the proposed layout in [`AGENTS.md`](AGENTS.md#proposed-lapsim-architecture).
+3. **Build the new lapsim as MATLAB functions** (done: `lapsim/`, 42 tests in `lapsim/tests`; see §7.8), with one parameter struct (units and source per value), a track loaded from the GPS file (grade and curvature), explicit limits, a race ended by distance, and `matlab.unittest` tests (energy balance, distance, time limit, limits respected). See the proposed layout in [`AGENTS.md`](AGENTS.md#proposed-lapsim-architecture).
 4. **Keep `Old Stuff/` as read-only reference.** Use `Shell_Track_Profile_Final.m` with its legacy parameters as a regression benchmark (236.4 mi/kWh) while porting.
 
 ## 10. How this review was done

@@ -28,12 +28,18 @@ p.rules.t_limit       = 2100;   % [s]  35 min for the attempt (Ch. II Art. 226)
 p.rules.V_max         = 60;     % [V]  max voltage anywhere on the car (Ch. I Art. 57a)
 p.rules.m_driver_min  = 50.0;   % [kg] driver incl. gear; ballast tops a lighter driver up to this (Ch. I Art. 20)
 p.rules.m_vehicle_max = 140;    % [kg] vehicle without driver (README section 4)
+p.rules.E_pack_max    = 1000;   % [Wh] battery pack size limit (README section 4, AGENTS.md)
 
 %% Environment
 p.env.g   = 9.81;   % [m/s^2] gravity. LEGACY L35
 p.env.rho = 1.15;    % [kg/m^3] BLANK. Air density at IMS on race day (~220 m altitude).
                     %   Legacy 1.004 "Colorado" (L33) is wrong for Indianapolis
                     %   (README 7.1 #3); the review gives about 1.15-1.19 for IMS.
+p.env.wind_speed    = 0;   % [m/s] ASSUMED calm. Steady wind on race day. Ported from the Chat
+                           %   branch, but as a compass vector so the along-track component
+                           %   changes around the lap (Chat used one headwind for the whole lap).
+p.env.wind_from_deg = 0;   % [deg] compass direction the wind blows FROM (0 = north, 90 = east).
+                           %   Unused while wind_speed = 0.
 
 %% Mass
 p.mass.m_vehicle = 33.6;  % [kg] BLANK. Car without driver (rule max 140 kg).
@@ -59,6 +65,13 @@ p.vehicle.C_d   = 0.1;     % [-] drag coefficient. LEGACY L38. Unsourced.
 p.vehicle.A_f   = 0.71;    % [m^2] frontal area. LEGACY L83. README 7.2 notes this is
                            %   large for a prototype; measure CdA by coast-down.
 p.vehicle.mu    = 0.7;     % [-] tyre-road friction coefficient. LEGACY L66 (mu_t). Unsourced.
+p.vehicle.front_track = 0.8;  % [m] distance between the two front contact patches. ASSUMED:
+                           %   Chat-branch placeholder, never measured. With the CG position it
+                           %   gives the rollover limit (support triangle narrowing to the single
+                           %   rear wheel). Inf = no rollover limit. MEASURE.
+p.vehicle.F_brake_max = 400;  % [N] maximum total braking force. ASSUMED: Chat-branch placeholder,
+                           %   never measured. Also capped by tyre grip. Brakes are used only when
+                           %   coasting alone would leave the car above the corner envelope.
 
 %% Wheels and tyres (all three wheels identical, as in the legacy model)
 p.wheel.r_tire = 0.2413;   % [m] LEGACY L58 "outer radius of tire". Used as the rolling
@@ -95,6 +108,10 @@ p.motor.J_rotor   = 4000e-7; % [kg*m^2] BLANK. Rotor inertia for our winding, fr
                             %   3,060-5,100 g*cm^2 across EC 90 flat windings.
 p.motor.n_max     = Inf;    % [rpm] BLANK. Max permissible motor speed (datasheet).
                             %   Inf = no speed limit.
+p.motor.T_max     = Inf;    % [N*m] BLANK. Largest usable shaft torque (thermal / datasheet).
+                            %   Inf = only I_max limits torque. Ported from the Chat branch.
+p.motor.P_shaft_max = Inf;  % [W] BLANK. Largest usable shaft power. Inf = no limit. Ported
+                            %   from the Chat branch.
 p.motor.eta_comm  = 1;    % [-] BLANK. Commutation penalty as a separate efficiency on
                             %   motor electrical power. Legacy cut kt by 0.9 with the note
                             %   "Maxon has a sheet that shows that when using sinusoidal
@@ -111,10 +128,22 @@ p.drivetrain.freewheel = true;   % [true/false] BLANK. Is there a freewheel or c
                                 %   motor and wheel? true: the motor decouples and spins
                                 %   down when coasting. false: the wheel back-drives the
                                 %   motor. README 7.1 #2: this alone moves the result ~13 %.
+p.drivetrain.coast_drag = 0;    % [N] ASSUMED none. Residual drag at the wheel while coasting
+                                %   with a freewheel (clutch / bearing drag). Ported from the
+                                %   Chat branch. MEASURE by coast-down with the motor decoupled.
 
 %% Electrical: pack, controller, accessories (everything is on the one metered pack)
-p.elec.V_batt   = 60;    % [V] pack voltage. LEGACY L36 (= rule max). Held constant;
-                         %   there is no state-of-charge or sag model.
+p.elec.V_batt   = 60;    % [V] pack open-circuit voltage. LEGACY L36 (= rule max). Held
+                         %   constant; there is no state-of-charge model.
+p.elec.R_batt   = 0;     % [ohm] ASSUMED ideal pack. Internal resistance; makes the terminal
+                         %   voltage sag with load, which tightens the duty-cycle limit. The
+                         %   joulemeter sits at the terminals, so this loss is upstream of the
+                         %   score. The Chat branch used an unsourced 0.15 ohm. MEASURE.
+p.elec.V_min    = 0;     % [V] ASSUMED no limit. Lowest allowed terminal voltage (BMS cutoff).
+p.elec.I_batt_max = Inf; % [A] BLANK. Largest pack current (BMS / fuse). Inf = no limit.
+p.elec.P_term_max = Inf; % [W] BLANK. Largest terminal power. Inf = no limit.
+p.elec.capacity_Wh = p.rules.E_pack_max;  % [Wh] usable chemical energy. Defaults to the rule
+                         %   maximum, so it never binds for a 40-60 Wh race. Set the real pack.
 p.elec.eta_ctrl = 0.95;  % [-] motor controller efficiency. LEGACY L75,
                          %   "Good estimate from EE team".
 p.elec.P_aux    = 0;   % [W] BLANK. Everything else the joulemeter sees: controller
@@ -122,8 +151,12 @@ p.elec.P_aux    = 0;   % [W] BLANK. Everything else the joulemeter sees: control
                          %   AccessoryPower = 0 "ADD COMMS POWER ETC HERE" (L72) and never
                          %   used it (README 7.1 #5).
 
-%% Driving strategy: pulse and glide
-p.strategy.T_pulse = 0.9;               % [N*m] motor shaft torque during a pulse. LEGACY L47.
+%% Driving strategy: pulse and glide, or constant-speed cruise
+p.strategy.mode    = 'pulse_glide';     % 'pulse_glide' or 'cruise'. Cruise (ported from the Chat
+                                        %   branch) uses whatever torque holds v_cruise, limited
+                                        %   by the caps below; it is not tied to T_pulse.
+p.strategy.v_cruise = 17.5 * MPH_TO_MS; % [m/s] cruise speed (centre of the legacy band)
+p.strategy.T_pulse = 0.9;              % [N*m] motor shaft torque during a pulse. LEGACY L47.
                                         %   NB README 7.1 #16: the legacy model applied 0.9 N*m
                                         %   at the wheel with no drivetrain loss, so its motor
                                         %   really ran at 0.968 N*m. Here it is motor torque.
@@ -154,7 +187,12 @@ p.track.a_y_comfort  = Inf;       % [m/s^2] BLANK. Lateral acceleration the driv
                                   % README 5: at mu*g = 6.9 m/s^2 no corner limits the car;
                                   % near 0.3 g, T12, T13, T1 and T10 start to.
 
+%% Team goal (used by targetSweep and the summary only; never changes the physics)
+p.goal.target_mi_per_kWh = 300;   % [mi/kWh] ASSUMED design goal, carried over from the Chat branch
+                                  %   (its README calls it user-supplied). CONFIRM. For scale, the
+                                  %   2026 winner was about 470 km/kWh = 292 mi/kWh (unverified).
+
 %% Numerics
-p.sim.dt = 0.1;   % [s] time step. LEGACY L118; converged to about 0.1 % (README section 6)
+p.sim.dt = 0.1;  % [s] time step. LEGACY L118; converged to about 0.1 % (README section 6)
 
 end
