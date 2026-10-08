@@ -18,7 +18,8 @@ It should then be used for design trades (gear ratio, motor torque, mass, tyres,
 README.md                    verified audit of legacy code + rules + track facts
 AGENTS.md / CLAUDE.md        these notes
 Old Stuff/Vehicle Model/     legacy MATLAB scripts + track GPS data (reference only)
-lapsim/                      (proposed, not yet created) the new simulator
+lapsim/                      the new simulator: lapsim.m (model) + parameters.m (all inputs;
+                             NaN = blank still to be filled, lapsim refuses to run until then)
 ```
 
 - **Treat `Old Stuff/` as read-only reference.** Don't fix bugs there. Port ideas into `lapsim/` instead. The one exception is if the team explicitly asks for a legacy fix, e.g. to reproduce an old result.
